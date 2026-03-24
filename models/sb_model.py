@@ -282,7 +282,7 @@ class SBModel(BaseModel):
                         time_idx = (t * torch.ones(size=[self.real_A.shape[0]]).to(self.real_A.device)).long()
                         time = times[time_idx]
                         z = torch.randn(size=[self.real_A.shape[0],4*self.opt.ngf]).to(self.real_A.device)
-                        multiplex_label = None if label_idx is None else (time_idx * 0 + label_idx)
+                        multiplex_label = None if label_idx is None else torch.full_like(time_idx, label_idx)
                         Xt_1 = self.netG(Xt, time_idx, z, multiplex_label=multiplex_label)
                         fake_name = "fake_"+str(t+1) if label_name is None else "fake_"+label_name+"_"+str(t+1)
                         setattr(self, fake_name, Xt_1)
