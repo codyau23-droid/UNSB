@@ -82,6 +82,16 @@ bash ./scripts/train_sc_sim2win_main.sh
 
 Although the training is available with arbitrary batch size, we recommend to use batch size = 1.
 
+### Optional multiplex training
+
+To train a single UNSB model across multiple target sub-domains, provide a comma-separated label list and encode each domain in the image filename suffix. For example, files such as `sample_001_HER2.png` and `sample_002_ER.png` can be mixed in the same dataset when using:
+
+```
+python train.py --dataroot ./datasets/multiplex --name multiplex_SB \
+--mode sb --lambda_SB 1.0 --lambda_NCE 1.0 --gpu_ids 0 \
+--multiplex_labels HER2,ER,PR,Ki67
+```
+
 ## Test & Evaluation
 Refer the ```./run_test.sh``` file or 
 
@@ -94,6 +104,8 @@ python test.py --dataroot [path-to-dataset] --name [experiment-name] --mode sb \
 The outputs will be saved in ```./results/[experiment-name]/```
 
 Folders named as ```fake_[num_NFE]``` represent the generated outputs with different NFE steps.
+
+When `--multiplex_labels` is enabled, the test run also exports per-label outputs named as `fake_[label]_[num_NFE]`.
 
 For evaluation, we use official module of [pytorch-fid](https://github.com/mseitzer/pytorch-fid)
 
