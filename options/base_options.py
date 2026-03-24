@@ -36,6 +36,8 @@ class BaseOptions():
         parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in the first conv layer')
         parser.add_argument('--num_timesteps', type=int, default=5, help='# of discrim filters in the first conv layer')
         parser.add_argument('--embedding_dim', type=int, default=512, help='# of output image channels: 3 for RGB and 1 for grayscale')
+        parser.add_argument('--multiplex_labels', type=str, default='', help='comma-separated target labels for multiplex translation, e.g. HER2,ER,PR,Ki67')
+        parser.add_argument('--multiplex_label_separator', type=str, default='_', help='filename separator used to parse multiplex labels from image names')
         parser.add_argument('--netD', type=str, default='basic_cond', choices=['basic', 'n_layers', 'pixel', 'patch', 'tilestylegan2', 'stylegan2'], help='specify discriminator architecture. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
         parser.add_argument('--netE', type=str, default='basic_cond', choices=['basic', 'n_layers', 'pixel', 'patch', 'tilestylegan2', 'stylegan2', 'patchstylegan2'], help='specify discriminator architecture. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
         parser.add_argument('--netG', type=str, default='resnet_9blocks_cond', choices=['resnet_9blocks', 'resnet_6blocks', 'unet_256', 'unet_128', 'stylegan2', 'smallstylegan2', 'resnet_cat'], help='specify generator architecture')
@@ -149,6 +151,8 @@ class BaseOptions():
         """Parse our options, create checkpoints directory suffix, and set up gpu device."""
         opt = self.gather_options()
         opt.isTrain = self.isTrain   # train or test
+        opt.multiplex_label_names = [label.strip() for label in opt.multiplex_labels.split(',') if label.strip()]
+        opt.multiplex_num_labels = len(opt.multiplex_label_names)
 
         # process opt.suffix
         if opt.suffix:

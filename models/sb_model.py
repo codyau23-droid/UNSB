@@ -48,6 +48,7 @@ class SBModel(BaseModel):
 
     def __init__(self, opt):
         BaseModel.__init__(self, opt)
+        self.multiplex_label_names = getattr(self.opt, 'multiplex_label_names', [])
 
         # specify the training losses you want to print out.
         # The training/test scripts will call <BaseModel.get_current_losses>
@@ -55,9 +56,15 @@ class SBModel(BaseModel):
         self.visual_names = ['real_A','real_A_noisy', 'fake_B', 'real_B']
         if self.opt.phase == 'test':
             self.visual_names = ['real']
-            for NFE in range(self.opt.num_timesteps):
-                fake_name = 'fake_' + str(NFE+1)
-                self.visual_names.append(fake_name)
+            if self.multiplex_label_names:
+                for label_name in self.multiplex_label_names:
+                    for NFE in range(self.opt.num_timesteps):
+                        fake_name = 'fake_' + label_name + '_' + str(NFE+1)
+                        self.visual_names.append(fake_name)
+            else:
+                for NFE in range(self.opt.num_timesteps):
+                    fake_name = 'fake_' + str(NFE+1)
+                    self.visual_names.append(fake_name)
         self.nce_layers = [int(i) for i in self.opt.nce_layers.split(',')]
 
         if opt.nce_idt and self.isTrain:
@@ -91,6 +98,14 @@ class SBModel(BaseModel):
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
             self.optimizers.append(self.optimizer_E)
+
+    def _get_multiplex_label(self, label, batch_size):
+        if label is None:
+            return None
+        label = label.to(self.device).long().view(-1)
+        if label.shape[0] == 1 and batch_size != 1:
+            label = label.repeat(batch_size)
+        return label
             
     def data_dependent_initialize(self, data,data2):
         """
@@ -156,9 +171,12 @@ class SBModel(BaseModel):
         AtoB = self.opt.direction == 'AtoB'
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        self.multiplex_label = self._get_multiplex_label(input.get('multiplex_label'), self.real_A.shape[0])
+        self.multiplex_label2 = self.multiplex_label
         if input2 is not None:
             self.real_A2 = input2['A' if AtoB else 'B'].to(self.device)
             self.real_B2 = input2['B' if AtoB else 'A'].to(self.device)
+            self.multiplex_label2 = self._get_multiplex_label(input2.get('multiplex_label'), self.real_A2.shape[0])
         
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
@@ -191,13 +209,13 @@ class SBModel(BaseModel):
                 time_idx = (t * torch.ones(size=[self.real_A.shape[0]]).to(self.real_A.device)).long()
                 time     = times[time_idx]
                 z        = torch.randn(size=[self.real_A.shape[0],4*self.opt.ngf]).to(self.real_A.device)
-                Xt_1     = self.netG(Xt, time_idx, z)
+                Xt_1     = self.netG(Xt, time_idx, z, multiplex_label=self.multiplex_label)
                 
                 Xt2       = self.real_A2 if (t == 0) else (1-inter) * Xt2 + inter * Xt_12.detach() + (scale * tau).sqrt() * torch.randn_like(Xt2).to(self.real_A.device)
                 time_idx = (t * torch.ones(size=[self.real_A.shape[0]]).to(self.real_A.device)).long()
                 time     = times[time_idx]
                 z        = torch.randn(size=[self.real_A.shape[0],4*self.opt.ngf]).to(self.real_A.device)
-                Xt_12    = self.netG(Xt2, time_idx, z)
+                Xt_12    = self.netG(Xt2, time_idx, z, multiplex_label=self.multiplex_label2)
                 
                 
                 if self.opt.nce_idt:
@@ -205,7 +223,7 @@ class SBModel(BaseModel):
                     time_idx = (t * torch.ones(size=[self.real_A.shape[0]]).to(self.real_A.device)).long()
                     time     = times[time_idx]
                     z        = torch.randn(size=[self.real_A.shape[0],4*self.opt.ngf]).to(self.real_A.device)
-                    Xt_1B = self.netG(XtB, time_idx, z)
+                    Xt_1B = self.netG(XtB, time_idx, z, multiplex_label=self.multiplex_label)
             if self.opt.nce_idt:
                 self.XtB = XtB.detach()
             self.real_A_noisy = Xt.detach()
@@ -225,8 +243,12 @@ class SBModel(BaseModel):
                 self.real = torch.flip(self.real, [3])
                 self.realt = torch.flip(self.realt, [3])
         
-        self.fake = self.netG(self.realt,self.time_idx,z_in)
-        self.fake_B2 =  self.netG(self.real_A_noisy2,self.time_idx,z_in2)
+        fake_label = self.multiplex_label
+        if self.opt.nce_idt and self.opt.isTrain and fake_label is not None:
+            fake_label = torch.cat((fake_label, fake_label), dim=0)
+
+        self.fake = self.netG(self.realt,self.time_idx,z_in, multiplex_label=fake_label)
+        self.fake_B2 =  self.netG(self.real_A_noisy2,self.time_idx,z_in2, multiplex_label=self.multiplex_label2)
         self.fake_B = self.fake[:self.real_A.size(0)]
         if self.opt.nce_idt:
             self.idt_B = self.fake[self.real_A.size(0):]
@@ -248,20 +270,22 @@ class SBModel(BaseModel):
             visuals = []
             with torch.no_grad():
                 self.netG.eval()
-                for t in range(self.opt.num_timesteps):
-                    
-                    if t > 0:
-                        delta = times[t] - times[t-1]
-                        denom = times[-1] - times[t-1]
-                        inter = (delta / denom).reshape(-1,1,1,1)
-                        scale = (delta * (1 - delta / denom)).reshape(-1,1,1,1)
-                    Xt       = self.real_A if (t == 0) else (1-inter) * Xt + inter * Xt_1.detach() + (scale * tau).sqrt() * torch.randn_like(Xt).to(self.real_A.device)
-                    time_idx = (t * torch.ones(size=[self.real_A.shape[0]]).to(self.real_A.device)).long()
-                    time     = times[time_idx]
-                    z        = torch.randn(size=[self.real_A.shape[0],4*self.opt.ngf]).to(self.real_A.device)
-                    Xt_1     = self.netG(Xt, time_idx, z)
-                    
-                    setattr(self, "fake_"+str(t+1), Xt_1)
+                multiplex_targets = list(enumerate(self.multiplex_label_names)) if self.multiplex_label_names else [(None, None)]
+                for label_idx, label_name in multiplex_targets:
+                    for t in range(self.opt.num_timesteps):
+                        if t > 0:
+                            delta = times[t] - times[t-1]
+                            denom = times[-1] - times[t-1]
+                            inter = (delta / denom).reshape(-1,1,1,1)
+                            scale = (delta * (1 - delta / denom)).reshape(-1,1,1,1)
+                        Xt = self.real_A if (t == 0) else (1-inter) * Xt + inter * Xt_1.detach() + (scale * tau).sqrt() * torch.randn_like(Xt).to(self.real_A.device)
+                        time_idx = (t * torch.ones(size=[self.real_A.shape[0]]).to(self.real_A.device)).long()
+                        time = times[time_idx]
+                        z = torch.randn(size=[self.real_A.shape[0],4*self.opt.ngf]).to(self.real_A.device)
+                        multiplex_label = None if label_idx is None else torch.full_like(time_idx, label_idx)
+                        Xt_1 = self.netG(Xt, time_idx, z, multiplex_label=multiplex_label)
+                        fake_name = "fake_"+str(t+1) if label_name is None else "fake_"+label_name+"_"+str(t+1)
+                        setattr(self, fake_name, Xt_1)
                     
     def compute_D_loss(self):
         """Calculate GAN loss for the discriminator"""
@@ -331,12 +355,12 @@ class SBModel(BaseModel):
     def calculate_NCE_loss(self, src, tgt):
         n_layers = len(self.nce_layers)
         z    = torch.randn(size=[self.real_A.size(0),4*self.opt.ngf]).to(self.real_A.device)
-        feat_q = self.netG(tgt, self.time_idx*0, z, self.nce_layers, encode_only=True)
+        feat_q = self.netG(tgt, self.time_idx*0, z, self.nce_layers, encode_only=True, multiplex_label=self.multiplex_label)
 
         if self.opt.flip_equivariance and self.flipped_for_equivariance:
             feat_q = [torch.flip(fq, [3]) for fq in feat_q]
         
-        feat_k = self.netG(src, self.time_idx*0,z,self.nce_layers, encode_only=True)
+        feat_k = self.netG(src, self.time_idx*0,z,self.nce_layers, encode_only=True, multiplex_label=self.multiplex_label)
         feat_k_pool, sample_ids = self.netF(feat_k, self.opt.num_patches, None)
         feat_q_pool, _ = self.netF(feat_q, self.opt.num_patches, sample_ids)
 

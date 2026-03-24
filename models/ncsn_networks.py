@@ -374,9 +374,17 @@ class ResnetGenerator_ncsn(nn.Module):
         nn.init.zeros_(modules_emb[-1].bias)
         modules_emb += [nn.LeakyReLU(0.2)]
         self.time_embed = nn.Sequential(*modules_emb)
-        
-    def forward(self, x, time_cond,z,layers=[], encode_only=False):
+        self.label_embed = None
+        if getattr(opt, 'multiplex_num_labels', 0) > 0:
+            self.label_embed = nn.Embedding(opt.multiplex_num_labels, self.ngf * 4)
+         
+    def forward(self, x, time_cond,z,layers=[], encode_only=False, multiplex_label=None):
         z_embed = self.z_transform(z)
+        if self.label_embed is not None and multiplex_label is not None:
+            multiplex_label = multiplex_label.to(x.device).long().view(-1)
+            if multiplex_label.shape[0] == 1 and z_embed.shape[0] != 1:
+                multiplex_label = multiplex_label.repeat(z_embed.shape[0])
+            z_embed = z_embed + self.label_embed(multiplex_label)
         # print(z_embed.shape)
         temb = get_timestep_embedding(time_cond, self.ngf)
         time_embed = self.time_embed(temb)

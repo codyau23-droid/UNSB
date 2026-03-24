@@ -1,4 +1,5 @@
 import os.path
+import torch
 from data.base_dataset import BaseDataset, get_transform
 from data.image_folder import make_dataset
 from PIL import Image
@@ -36,6 +37,17 @@ class UnalignedDataset(BaseDataset):
         self.B_paths = sorted(make_dataset(self.dir_B, opt.max_dataset_size))    # load images from '/path/to/data/trainB'
         self.A_size = len(self.A_paths)  # get the size of dataset A
         self.B_size = len(self.B_paths)  # get the size of dataset B
+        self.multiplex_label_names = getattr(opt, 'multiplex_label_names', [])
+        self.multiplex_label_lookup = {label: idx for idx, label in enumerate(self.multiplex_label_names)}
+
+    def _extract_multiplex_label(self, path, default=0):
+        if not self.multiplex_label_lookup:
+            return 0
+        filename = os.path.splitext(os.path.basename(path))[0]
+        if self.opt.multiplex_label_separator not in filename:
+            return default
+        label_name = filename.split(self.opt.multiplex_label_separator)[-1]
+        return self.multiplex_label_lookup.get(label_name, default)
 
     def __getitem__(self, index):
         """Return a data point and its metadata information.
@@ -66,8 +78,11 @@ class UnalignedDataset(BaseDataset):
         transform = get_transform(modified_opt)
         A = transform(A_img)
         B = transform(B_img)
+        multiplex_label = self._extract_multiplex_label(A_path, default=-1)
+        if multiplex_label < 0:
+            multiplex_label = self._extract_multiplex_label(B_path, default=0)
 
-        return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path}
+        return {'A': A, 'B': B, 'A_paths': A_path, 'B_paths': B_path, 'multiplex_label': torch.tensor(multiplex_label, dtype=torch.long)}
 
     def __len__(self):
         """Return the total number of images in the dataset.
