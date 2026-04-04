@@ -95,6 +95,14 @@ The outputs will be saved in ```./results/[experiment-name]/```
 
 Folders named as ```fake_[num_NFE]``` represent the generated outputs with different NFE steps.
 
+For texture-sensitive single-image inference (for example scanned pages or brochures), you can point `--dataset_mode single` at a folder of source images. Test-time loading now keeps the original image resolution instead of forcing a 256×256 resize, which helps preserve fine text and paper texture detail.
+
+```
+python test.py --dataroot /path/to/source_images --dataset_mode single --name [experiment-name] \
+--mode sb --phase test --epoch [epoch-for-test] --eval --num_test [num-test-image] \
+--gpu_ids 0 --checkpoints_dir ./checkpoints
+```
+
 For evaluation, we use official module of [pytorch-fid](https://github.com/mseitzer/pytorch-fid)
 
 ```

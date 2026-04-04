@@ -154,13 +154,17 @@ class SBModel(BaseModel):
         The option 'direction' can be used to swap domain A and domain B.
         """
         AtoB = self.opt.direction == 'AtoB'
-        self.real_A = input['A' if AtoB else 'B'].to(self.device)
-        self.real_B = input['B' if AtoB else 'A'].to(self.device)
-        if input2 is not None:
-            self.real_A2 = input2['A' if AtoB else 'B'].to(self.device)
-            self.real_B2 = input2['B' if AtoB else 'A'].to(self.device)
-        
-        self.image_paths = input['A_paths' if AtoB else 'B_paths']
+        source_key = 'A' if AtoB else 'B'
+        target_key = 'B' if AtoB else 'A'
+        path_key = source_key + '_paths'
+        secondary_input = input2 if input2 is not None else input
+        source_value = input.get(source_key, input['A'])
+
+        self.real_A = source_value.to(self.device)
+        self.real_B = input.get(target_key, source_value).to(self.device)
+        self.real_A2 = secondary_input.get(source_key, source_value).to(self.device)
+        self.real_B2 = secondary_input.get(target_key, self.real_B).to(self.device)
+        self.image_paths = input.get(path_key, input['A_paths'])
 
     def forward(self):
         

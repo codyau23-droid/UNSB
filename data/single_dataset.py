@@ -1,6 +1,7 @@
 from data.base_dataset import BaseDataset, get_transform
 from data.image_folder import make_dataset
 from PIL import Image
+import util.util as util
 
 
 class SingleDataset(BaseDataset):
@@ -18,7 +19,8 @@ class SingleDataset(BaseDataset):
         BaseDataset.__init__(self, opt)
         self.A_paths = sorted(make_dataset(opt.dataroot, opt.max_dataset_size))
         input_nc = self.opt.output_nc if self.opt.direction == 'BtoA' else self.opt.input_nc
-        self.transform = get_transform(opt, grayscale=(input_nc == 1))
+        transform_opt = util.copyconf(opt, preprocess='none') if not opt.isTrain else opt
+        self.transform = get_transform(transform_opt, grayscale=(input_nc == 1))
 
     def __getitem__(self, index):
         """Return a data point and its metadata information.

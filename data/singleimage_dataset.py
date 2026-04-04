@@ -96,7 +96,8 @@ class SingleImageDataset(BaseDataset):
             transform_B = get_transform(self.opt, params=param, method=Image.BILINEAR)
             B = transform_B(B_img)
         else:
-            transform = get_transform(self.opt, method=Image.BILINEAR)
+            transform_opt = util.copyconf(self.opt, preprocess='none')
+            transform = get_transform(transform_opt, method=Image.BILINEAR)
             A = transform(A_img)
             B = transform(B_img)
 
